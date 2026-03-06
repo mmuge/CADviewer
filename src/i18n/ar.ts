@@ -1,0 +1,47 @@
+export default {
+  drop: {
+    title:  'افتح ملف DWG أو DXF',
+    sub:    'اسحب الملف هنا، أو',
+    browse: 'استعراض الملفات',
+    hint:   'الملفات لا تغادر جهازك — خصوصية تامة',
+  },
+  tool: {
+    select:     'تحديد',
+    distance:   'مسافة',
+    area:       'مساحة',
+    coordinate: 'إحداثيات',
+    angle:      'زاوية',
+    none:       'تحديد',
+  },
+  hint: {
+    distFirst:   'انقر على النقطة الأولى',
+    distSecond:  'انقر على النقطة الثانية',
+    areaStart:   'انقر لتحديد نقاط المضلع',
+    areaPoints:  '{n} نقطة — انقر بالقرب من البداية للإغلاق',
+    angleFirst:  'انقر على النقطة الأولى للشعاع',
+    angleVertex: 'انقر على رأس الزاوية',
+    angleLast:   'انقر على النقطة الثانية للشعاع',
+    coord:       'اضغط في أي مكان لتسجيل الإحداثيات',
+  },
+  results: {
+    title:     'القياسات',
+    copyAll:   'نسخ كنص',
+    exportCSV: 'تنزيل CSV',
+    exportPDF: 'طباعة / حفظ PDF',
+    copied:    'تم النسخ!',
+  },
+  ui: {
+    unit:        'الوحدة',
+    clear:       'مسح',
+    clearAll:    'مسح جميع القياسات',
+    toggleLang:  'تغيير اللغة',
+    toggleTheme: 'الوضع الليلي / النهاري',
+    openFile:    'فتح ملف آخر',
+    loading:     'جارٍ فتح الملف…',
+    pointsPicked: 'نقطة محددة',
+  },
+  error: {
+    unsupported: 'الصيغة غير مدعومة. يُرجى استخدام ملفات .dwg أو .dxf فقط.',
+    parseFailed: 'تعذّر فتح الملف. قد يكون تالفاً أو غير مدعوم.',
+  },
+}
