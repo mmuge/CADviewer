@@ -1,6 +1,5 @@
 import { ref } from 'vue'
 import { AcApDocManager } from '@mlightcad/cad-simple-viewer'
-import { AcDbCircle, AcDbLwPolyline, AcDbLine } from '@mlightcad/data-model'
 
 // ═══════════════════════════════════════════════════════════════
 // Types
@@ -26,7 +25,7 @@ export interface MeasureResult {
 export type UnitKey = 'mm' | 'cm' | 'm' | 'ft'
 
 // ═══════════════════════════════════════════════════════════════
-// Reactive state (module-level singletons)
+// Reactive state
 // ═══════════════════════════════════════════════════════════════
 export const measureMode   = ref<MeasureMode>('none')
 export const pickedPoints  = ref<WorldPoint[]>([])
@@ -38,8 +37,6 @@ let _counter = 0
 // ═══════════════════════════════════════════════════════════════
 // Unit helpers
 // ═══════════════════════════════════════════════════════════════
-
-/** Drawing units are assumed to be mm (AutoCAD default). Adjust if needed. */
 const DRAW_UNIT_TO_MM = 1
 
 function toDisplay(mm: number): number {
@@ -69,7 +66,7 @@ function convertArea(mm2: number): number {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Coordinate conversion: screen pixel → CAD world
+// Screen → World coordinate conversion
 // ═══════════════════════════════════════════════════════════════
 export function screenToWorld(
   clientX: number,
@@ -79,18 +76,16 @@ export function screenToWorld(
   const manager = AcApDocManager.instance
   if (!manager) return null
 
-  // Access internal viewer (Three.js wrapper)
   const viewer = (manager as any)._viewer ?? (manager as any).viewer
   if (!viewer) return null
 
-  const camera   = viewer.camera   // THREE.OrthographicCamera
+  const camera = viewer.camera
   if (!camera) return null
 
   const rect = canvas.getBoundingClientRect()
   const nx   = ((clientX - rect.left)  / rect.width)  * 2 - 1
   const ny   = -((clientY - rect.top) / rect.height) * 2 + 1
 
-  // Orthographic: world XY = camera frustum offset + NDC scaled
   const halfW = (camera.right - camera.left)   / 2
   const halfH = (camera.top   - camera.bottom) / 2
   const cx    = (camera.right + camera.left)   / 2
@@ -132,23 +127,42 @@ export function computePolygonAreaMm2(pts: WorldPoint[]): number {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Entity-based area extraction
+// Entity-based area extraction (safe — no typed imports)
+// Uses duck-typing to avoid depending on specific class exports
 // ═══════════════════════════════════════════════════════════════
 export function entityArea(entity: unknown): number | null {
-  if (entity instanceof AcDbCircle) {
-    const r = (entity as any).radius as number
-    return convertArea(Math.PI * r * r)
+  if (!entity || typeof entity !== 'object') return null
+  const e = entity as any
+
+  // Circle: has center + radius
+  if (typeof e.radius === 'number' && e.center != null) {
+    return convertArea(Math.PI * e.radius * e.radius)
   }
-  if (entity instanceof AcDbLwPolyline) {
-    const e = entity as any
-    if (!e.isClosed) return null
+
+  // LwPolyline / Polyline: has numVerts + getPointAt or vertexAt
+  if (typeof e.numVerts === 'number' && e.numVerts >= 3) {
+    const isClosed = e.isClosed === true || e.closed === true
+    if (!isClosed) return null
+
     const pts: WorldPoint[] = []
-    for (let i = 0; i < e.numVerts; i++) {
-      const p = e.getPointAt(i)
-      pts.push({ x: p.x, y: p.y, z: 0 })
+
+    if (typeof e.getPointAt === 'function') {
+      for (let i = 0; i < e.numVerts; i++) {
+        const p = e.getPointAt(i)
+        pts.push({ x: p.x, y: p.y, z: p.z ?? 0 })
+      }
+    } else if (typeof e.vertexAt === 'function') {
+      for (let i = 0; i < e.numVerts; i++) {
+        const p = e.vertexAt(i)
+        pts.push({ x: p.x, y: p.y, z: p.z ?? 0 })
+      }
+    } else {
+      return null
     }
+
     return convertArea(computePolygonAreaMm2(pts))
   }
+
   return null
 }
 
@@ -161,7 +175,7 @@ export function handleCanvasClick(ev: MouseEvent, canvas: HTMLCanvasElement) {
   const wp = screenToWorld(ev.clientX, ev.clientY, canvas)
   if (!wp) return
 
-  // ── Coordinate mode: single tap ─────────────────────────────
+  // Coordinate mode
   if (measureMode.value === 'coordinate') {
     addResult({
       mode:   'coordinate',
@@ -173,7 +187,7 @@ export function handleCanvasClick(ev: MouseEvent, canvas: HTMLCanvasElement) {
     return
   }
 
-  // ── Distance mode: two points ────────────────────────────────
+  // Distance mode
   if (measureMode.value === 'distance') {
     pickedPoints.value.push(wp)
     if (pickedPoints.value.length === 2) {
@@ -192,7 +206,7 @@ export function handleCanvasClick(ev: MouseEvent, canvas: HTMLCanvasElement) {
     return
   }
 
-  // ── Angle mode: three points (a, vertex, b) ───────────────────
+  // Angle mode (3 points)
   if (measureMode.value === 'angle') {
     pickedPoints.value.push(wp)
     if (pickedPoints.value.length === 3) {
@@ -210,18 +224,18 @@ export function handleCanvasClick(ev: MouseEvent, canvas: HTMLCanvasElement) {
     return
   }
 
-  // ── Area mode: polygon (click to add, close when near start or 20+ pts) ──
+  // Area mode (polygon)
   if (measureMode.value === 'area') {
     pickedPoints.value.push(wp)
     if (pickedPoints.value.length >= 3) {
-      const first = pickedPoints.value[0]
-      const snapPx = 20 / 1  // approximate world units threshold
-      const closeEnough =
-        Math.hypot(first.x - wp.x, first.y - wp.y) < snapPx ||
+      const first        = pickedPoints.value[0]
+      const snapThreshold = 20
+      const closeEnough  =
+        Math.hypot(first.x - wp.x, first.y - wp.y) < snapThreshold ||
         pickedPoints.value.length >= 25
 
       if (closeEnough) {
-        pickedPoints.value.pop() // remove duplicate close point
+        pickedPoints.value.pop()
         const areaMm2 = computePolygonAreaMm2(pickedPoints.value)
         const area    = convertArea(areaMm2)
         addResult({
