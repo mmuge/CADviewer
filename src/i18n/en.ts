@@ -1,0 +1,47 @@
+export default {
+  drop: {
+    title:  'Open a DWG or DXF File',
+    sub:    'Drag & drop your file here, or',
+    browse: 'Browse Files',
+    hint:   'Files never leave your device — 100% private',
+  },
+  tool: {
+    select:     'Select',
+    distance:   'Distance',
+    area:       'Area',
+    coordinate: 'Coords',
+    angle:      'Angle',
+    none:       'Select',
+  },
+  hint: {
+    distFirst:   'Click first point',
+    distSecond:  'Click second point',
+    areaStart:   'Click points to trace polygon',
+    areaPoints:  '{n} points — click near start to close',
+    angleFirst:  'Click first ray point',
+    angleVertex: 'Click angle vertex',
+    angleLast:   'Click second ray point',
+    coord:       'Tap anywhere to record coordinate',
+  },
+  results: {
+    title:     'Measurements',
+    copyAll:   'Copy all as text',
+    exportCSV: 'Download CSV',
+    exportPDF: 'Print / Save PDF',
+    copied:    'Copied to clipboard!',
+  },
+  ui: {
+    unit:        'Unit',
+    clear:       'Clear',
+    clearAll:    'Clear all measurements',
+    toggleLang:  'Switch language',
+    toggleTheme: 'Toggle dark / light mode',
+    openFile:    'Open another file',
+    loading:     'Opening file…',
+    pointsPicked: 'point(s) picked',
+  },
+  error: {
+    unsupported: 'Unsupported format. Please use .dwg or .dxf files.',
+    parseFailed: 'Failed to open file. It may be corrupted or unsupported.',
+  },
+}
