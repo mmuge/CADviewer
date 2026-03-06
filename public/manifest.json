@@ -1,0 +1,53 @@
+{
+  "name": "CAD Viewer & Extractor",
+  "short_name": "CAD Viewer",
+  "description": "View DWG/DXF files offline. Measure distances, areas and coordinates. Fully private — files never leave your device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#1B4F8A",
+  "background_color": "#0D2F5C",
+  "lang": "en",
+  "dir": "auto",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "./icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "application/acad":         [".dwg"],
+        "application/dxf":          [".dxf"],
+        "application/octet-stream": [".dwg", ".dxf"]
+      }
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Open DWG File",
+      "short_name": "Open DWG",
+      "description": "Open a DWG drawing",
+      "url": "./?action=open",
+      "icons": [{ "src": "./icons/icon-192.svg", "sizes": "192x192" }]
+    }
+  ]
+}
