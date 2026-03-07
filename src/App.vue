@@ -60,7 +60,7 @@ import MeasureToolbar from '@/components/MeasureToolbar.vue'
 import MeasureResults from '@/components/MeasureResults.vue'
 import CursorCoord    from '@/components/CursorCoord.vue'
 import { useTheme }   from '@/composables/useTheme'
-import { handleCanvasClick, handleEntityClick, measureMode } from '@/composables/useMeasure'
+import { handleCanvasClick, handleEntityClick } from '@/composables/useMeasure'
 
 const { t, locale } = useI18n()
 const dir = computed(() => locale.value === 'ar' ? 'rtl' : 'ltr')
@@ -80,32 +80,43 @@ const errorMsg       = ref('')
 const showFilePicker = ref(false)
 const hiddenInput    = ref<HTMLInputElement | null>(null)
 
+// Lazy-loaded CAD manager (set after mount)
+let cadManager: any = null
+
 provide('canvas', canvasRef)
 
 onMounted(async () => {
   const savedLang = localStorage.getItem('lang')
   if (savedLang) locale.value = savedLang as 'en' | 'ar'
 
-  // Lazy-load heavy CAD libs after mount (avoids Rollup issues at build)
-  const cadSimple = await import('@mlightcad/cad-simple-viewer')
-  const dataModel = await import('@mlightcad/data-model')
+  try {
+    // Load data-model first for worker registration
+    const dataModel = await import('@mlightcad/data-model')
 
-  dataModel.registerWorkers({
-    dxfParserWorkerUrl:   './assets/dxf-parser-worker.js',
-    libredwgParserWorker: './assets/libredwg-parser-worker.js',
-    mtextRendererWorker:  './assets/mtext-renderer-worker.js',
-  })
+    if (typeof dataModel.registerWorkers === 'function') {
+      dataModel.registerWorkers({
+        dxfParserWorkerUrl:   './assets/dxf-parser-worker.js',
+        libredwgParserWorker: './assets/libredwg-parser-worker.js',
+        mtextRendererWorker:  './assets/mtext-renderer-worker.js',
+      })
+    }
 
-  if (!canvasRef.value) return
-  cadSimple.AcApDocManager.createInstance(canvasRef.value)
+    // Init the viewer canvas
+    const cadSimple = await import('@mlightcad/cad-simple-viewer')
+    if (!canvasRef.value) return
 
-  canvasRef.value.addEventListener('cad:entitySelected', (ev: any) => {
-    handleEntityClick(ev.detail?.entity)
-  })
+    cadManager = cadSimple.AcApDocManager.createInstance(canvasRef.value)
 
-  canvasRef.value.addEventListener('click', (ev: MouseEvent) => {
-    if (canvasRef.value) handleCanvasClick(ev, canvasRef.value)
-  })
+    canvasRef.value.addEventListener('cad:entitySelected', (ev: any) => {
+      handleEntityClick(ev.detail?.entity)
+    })
+
+    canvasRef.value.addEventListener('click', (ev: MouseEvent) => {
+      if (canvasRef.value) handleCanvasClick(ev, canvasRef.value)
+    })
+  } catch (err) {
+    console.warn('[CADViewer] Init warning:', err)
+  }
 })
 
 watch(showFilePicker, (v) => {
@@ -138,16 +149,38 @@ async function loadFile(file: File) {
     }
 
     const cadSimple = await import('@mlightcad/cad-simple-viewer')
-    const dataModel = await import('@mlightcad/data-model')
+    const manager   = cadSimple.AcApDocManager.instance
 
+    // Register DWG converter only if API exists
     if (ext === 'dwg') {
-      dataModel.AcDbDatabaseConverterManager.instance.registerConverter(
-        dataModel.AcDbFileType.Dwg,
-        () => Promise.resolve(new (cadSimple as any).LibreDWGConverter())
-      )
+      try {
+        const dataModel = await import('@mlightcad/data-model')
+        const converterMgr = (dataModel as any).AcDbDatabaseConverterManager?.instance
+          ?? (cadSimple as any).AcDbDatabaseConverterManager?.instance
+
+        if (converterMgr && typeof converterMgr.registerConverter === 'function') {
+          const fileType = (dataModel as any).AcDbFileType?.Dwg
+            ?? (cadSimple as any).AcDbFileType?.Dwg
+            ?? 1 // fallback numeric
+
+          // Try to get LibreDWGConverter from either package
+          const ConverterClass = (cadSimple as any).LibreDWGConverter
+            ?? (dataModel as any).LibreDWGConverter
+
+          if (ConverterClass) {
+            converterMgr.registerConverter(
+              fileType,
+              () => Promise.resolve(new ConverterClass())
+            )
+          }
+        }
+      } catch (convErr) {
+        console.warn('[CADViewer] DWG converter registration skipped:', convErr)
+        // Continue — some versions auto-register or include it internally
+      }
     }
 
-    const ok = await cadSimple.AcApDocManager.instance.openDocument(
+    const ok = await manager.openDocument(
       file.name,
       data,
       { minimumChunkSize: 1000, readOnly: true }
@@ -204,8 +237,11 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
 .top-bar-left  { display: flex; align-items: center; gap: 12px; }
 .top-bar-right { display: flex; align-items: center; gap: 8px; }
 .app-title { font-size: 15px; font-weight: 700; color: var(--accent); }
-.file-name { font-size: 13px; color: var(--text-secondary); max-width: 200px;
-              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-name {
+  font-size: 13px; color: var(--text-secondary);
+  max-width: 200px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
 .icon-btn {
   padding: 6px 10px;
   border: 1px solid var(--border);
@@ -218,17 +254,12 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
 }
 .icon-btn:hover { background: var(--accent-pale); }
 .loading-overlay {
-  position: absolute;
-  inset: 0;
+  position: absolute; inset: 0;
   background: rgba(0,0,0,0.55);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  z-index: 200;
-  color: #fff;
-  font-size: 15px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 16px; z-index: 200;
+  color: #fff; font-size: 15px;
 }
 .spinner {
   width: 40px; height: 40px;
@@ -240,22 +271,19 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .error-toast {
   position: absolute;
-  bottom: 80px;
-  left: 50%;
+  bottom: 80px; left: 50%;
   transform: translateX(-50%);
-  background: #dc2626;
-  color: #fff;
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  z-index: 300;
-  max-width: 90vw;
+  background: #dc2626; color: #fff;
+  padding: 10px 20px; border-radius: 8px;
+  font-size: 14px; cursor: pointer;
+  z-index: 300; max-width: 90vw;
   text-align: center;
   box-shadow: 0 4px 16px rgba(0,0,0,0.3);
 }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.25s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 .slide-up-enter-active, .slide-up-leave-active { transition: all 0.3s; }
-.slide-up-enter-from, .slide-up-leave-to { transform: translateX(-50%) translateY(20px); opacity: 0; }
+.slide-up-enter-from, .slide-up-leave-to {
+  transform: translateX(-50%) translateY(20px); opacity: 0;
+}
 </style>
