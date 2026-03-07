@@ -1,35 +1,28 @@
 <template>
   <div class="app-root" :data-theme="isDark ? 'dark' : 'light'" :dir="dir">
 
-    <!-- ── Drop zone (shown when no file is loaded) ── -->
     <FileDropZone v-if="!hasFile" @file="onFile" />
 
-    <!-- ── CAD Canvas ── -->
     <canvas ref="canvasRef" class="cad-canvas" />
 
-    <!-- ── Top bar ── -->
     <header class="top-bar">
       <div class="top-bar-left">
         <span class="app-title">📐 CAD Viewer</span>
         <span v-if="fileName" class="file-name">{{ fileName }}</span>
       </div>
       <div class="top-bar-right">
-        <!-- Language toggle -->
         <button class="icon-btn" :title="t('ui.toggleLang')" @click="toggleLang">
           {{ locale === 'ar' ? 'EN' : 'ع' }}
         </button>
-        <!-- Dark mode toggle -->
         <button class="icon-btn" :title="t('ui.toggleTheme')" @click="toggleTheme">
           {{ isDark ? '☀️' : '🌙' }}
         </button>
-        <!-- Open new file -->
         <button class="icon-btn" :title="t('ui.openFile')" @click="showFilePicker = true">
           📂
         </button>
       </div>
     </header>
 
-    <!-- ── Hidden file input for top-bar re-open ── -->
     <input
       ref="hiddenInput"
       type="file"
@@ -38,16 +31,10 @@
       @change="onHiddenInput"
     />
 
-    <!-- ── Measurement toolbar (bottom) ── -->
     <MeasureToolbar v-if="hasFile" />
-
-    <!-- ── Results panel (top-right) ── -->
     <MeasureResults v-if="hasFile" :file-name="fileName" />
-
-    <!-- ── Live cursor coord tooltip ── -->
     <CursorCoord :canvas="canvasRef" />
 
-    <!-- ── Loading overlay ── -->
     <transition name="fade">
       <div v-if="isLoading" class="loading-overlay">
         <div class="spinner" />
@@ -55,7 +42,6 @@
       </div>
     </transition>
 
-    <!-- ── Error toast ── -->
     <transition name="slide-up">
       <div v-if="errorMsg" class="error-toast" @click="errorMsg = ''">
         ⚠️ {{ errorMsg }}
@@ -68,17 +54,14 @@
 <script setup lang="ts">
 import { ref, computed, provide, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AcApDocManager } from '@mlightcad/cad-simple-viewer'
-import { AcDbDatabaseConverterManager, AcDbFileType, registerWorkers } from '@mlightcad/data-model'
 
-import FileDropZone from '@/components/FileDropZone.vue'
+import FileDropZone   from '@/components/FileDropZone.vue'
 import MeasureToolbar from '@/components/MeasureToolbar.vue'
 import MeasureResults from '@/components/MeasureResults.vue'
-import CursorCoord from '@/components/CursorCoord.vue'
-import { useTheme } from '@/composables/useTheme'
+import CursorCoord    from '@/components/CursorCoord.vue'
+import { useTheme }   from '@/composables/useTheme'
 import { handleCanvasClick, handleEntityClick, measureMode } from '@/composables/useMeasure'
 
-// ── i18n ─────────────────────────────────────────────────────────────────────
 const { t, locale } = useI18n()
 const dir = computed(() => locale.value === 'ar' ? 'rtl' : 'ltr')
 
@@ -87,49 +70,44 @@ function toggleLang() {
   localStorage.setItem('lang', locale.value)
 }
 
-// ── Theme ─────────────────────────────────────────────────────────────────────
 const { isDark, toggle: toggleTheme } = useTheme()
 
-// ── State ─────────────────────────────────────────────────────────────────────
-const canvasRef    = ref<HTMLCanvasElement | null>(null)
-const hasFile      = ref(false)
-const fileName     = ref('')
-const isLoading    = ref(false)
-const errorMsg     = ref('')
+const canvasRef      = ref<HTMLCanvasElement | null>(null)
+const hasFile        = ref(false)
+const fileName       = ref('')
+const isLoading      = ref(false)
+const errorMsg       = ref('')
 const showFilePicker = ref(false)
-const hiddenInput  = ref<HTMLInputElement | null>(null)
+const hiddenInput    = ref<HTMLInputElement | null>(null)
 
-// Provide canvas ref to child components
 provide('canvas', canvasRef)
 
-// ── Init viewer ────────────────────────────────────────────────────────────────
-onMounted(() => {
-  // Restore language preference
+onMounted(async () => {
   const savedLang = localStorage.getItem('lang')
   if (savedLang) locale.value = savedLang as 'en' | 'ar'
 
-  // Register WASM web workers
-  registerWorkers({
+  // Lazy-load heavy CAD libs after mount (avoids Rollup issues at build)
+  const cadSimple = await import('@mlightcad/cad-simple-viewer')
+  const dataModel = await import('@mlightcad/data-model')
+
+  dataModel.registerWorkers({
     dxfParserWorkerUrl:   './assets/dxf-parser-worker.js',
     libredwgParserWorker: './assets/libredwg-parser-worker.js',
     mtextRendererWorker:  './assets/mtext-renderer-worker.js',
   })
 
   if (!canvasRef.value) return
-  AcApDocManager.createInstance(canvasRef.value)
+  cadSimple.AcApDocManager.createInstance(canvasRef.value)
 
-  // Listen for entity selection events from the viewer
   canvasRef.value.addEventListener('cad:entitySelected', (ev: any) => {
     handleEntityClick(ev.detail?.entity)
   })
 
-  // Forward canvas clicks to measurement engine
   canvasRef.value.addEventListener('click', (ev: MouseEvent) => {
     if (canvasRef.value) handleCanvasClick(ev, canvasRef.value)
   })
 })
 
-// ── Watch showFilePicker ───────────────────────────────────────────────────────
 watch(showFilePicker, (v) => {
   if (v) {
     hiddenInput.value?.click()
@@ -137,7 +115,6 @@ watch(showFilePicker, (v) => {
   }
 })
 
-// ── File loading ──────────────────────────────────────────────────────────────
 async function onFile(file: File) {
   await loadFile(file)
 }
@@ -145,13 +122,12 @@ async function onFile(file: File) {
 function onHiddenInput(ev: Event) {
   const file = (ev.target as HTMLInputElement).files?.[0]
   if (file) loadFile(file)
-  // Reset so same file can be re-opened
   ;(ev.target as HTMLInputElement).value = ''
 }
 
 async function loadFile(file: File) {
   isLoading.value = true
-  errorMsg.value = ''
+  errorMsg.value  = ''
   try {
     const buffer = await file.arrayBuffer()
     const data   = new Uint8Array(buffer)
@@ -161,15 +137,17 @@ async function loadFile(file: File) {
       throw new Error(t('error.unsupported'))
     }
 
-    // Register DWG converter (LibreDWG) for .dwg files
+    const cadSimple = await import('@mlightcad/cad-simple-viewer')
+    const dataModel = await import('@mlightcad/data-model')
+
     if (ext === 'dwg') {
-      AcDbDatabaseConverterManager.instance.registerConverter(
-        AcDbFileType.Dwg,
-        () => import('@mlightcad/cad-simple-viewer').then(m => new (m as any).LibreDWGConverter())
+      dataModel.AcDbDatabaseConverterManager.instance.registerConverter(
+        dataModel.AcDbFileType.Dwg,
+        () => Promise.resolve(new (cadSimple as any).LibreDWGConverter())
       )
     }
 
-    const ok = await AcApDocManager.instance.openDocument(
+    const ok = await cadSimple.AcApDocManager.instance.openDocument(
       file.name,
       data,
       { minimumChunkSize: 1000, readOnly: true }
@@ -189,7 +167,6 @@ async function loadFile(file: File) {
 </script>
 
 <style>
-/* Global reset */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #app { width: 100%; height: 100%; overflow: hidden; }
 </style>
@@ -204,7 +181,6 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
   font-family: system-ui, -apple-system, sans-serif;
   overflow: hidden;
 }
-
 .cad-canvas {
   position: absolute;
   inset: 0;
@@ -212,8 +188,6 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
   height: 100%;
   display: block;
 }
-
-/* ── Top bar ── */
 .top-bar {
   position: absolute;
   top: 0; left: 0; right: 0;
@@ -227,13 +201,11 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
   z-index: 40;
   backdrop-filter: blur(8px);
 }
-.top-bar-left { display: flex; align-items: center; gap: 12px; }
+.top-bar-left  { display: flex; align-items: center; gap: 12px; }
 .top-bar-right { display: flex; align-items: center; gap: 8px; }
-
-.app-title  { font-size: 15px; font-weight: 700; color: var(--accent); }
-.file-name  { font-size: 13px; color: var(--text-secondary); max-width: 200px;
-               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
+.app-title { font-size: 15px; font-weight: 700; color: var(--accent); }
+.file-name { font-size: 13px; color: var(--text-secondary); max-width: 200px;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .icon-btn {
   padding: 6px 10px;
   border: 1px solid var(--border);
@@ -245,8 +217,6 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
   transition: background 0.15s;
 }
 .icon-btn:hover { background: var(--accent-pale); }
-
-/* ── Loading overlay ── */
 .loading-overlay {
   position: absolute;
   inset: 0;
@@ -268,8 +238,6 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-
-/* ── Error toast ── */
 .error-toast {
   position: absolute;
   bottom: 80px;
@@ -286,8 +254,6 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
   text-align: center;
   box-shadow: 0 4px 16px rgba(0,0,0,0.3);
 }
-
-/* ── Transitions ── */
 .fade-enter-active, .fade-leave-active { transition: opacity 0.25s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 .slide-up-enter-active, .slide-up-leave-active { transition: all 0.3s; }
