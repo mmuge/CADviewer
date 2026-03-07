@@ -35,41 +35,37 @@
         <span class="file-name">{{ fileName }}</span>
         <button class="open-btn" @click="resetFile">📂 Open Another File</button>
       </header>
-      <canvas ref="canvasRef" class="cad-canvas"></canvas>
+      <div ref="containerRef" class="cad-container"></div>
     </div>
 
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 
-const fileInput  = ref<HTMLInputElement | null>(null)
-const canvasRef  = ref<HTMLCanvasElement | null>(null)
-const isLoaded   = ref(false)
-const isLoading  = ref(false)
-const fileName   = ref('')
-const errorMsg   = ref('')
+const fileInput    = ref<HTMLInputElement | null>(null)
+const containerRef = ref<HTMLDivElement | null>(null)
+const isLoaded     = ref(false)
+const isLoading    = ref(false)
+const fileName     = ref('')
+const errorMsg     = ref('')
 
-// Lazy-load CAD manager reference
-let cadManager: any = null
+let AcApDocManagerClass: any = null
 
 onMounted(async () => {
-  // Pre-load the viewer engine
   try {
-    const { AcApDocManager } = await import('@mlightcad/cad-simple-viewer')
-    const { registerWorkers } = await import('@mlightcad/data-model')
-
-    registerWorkers({
-      dxfParserWorkerUrl:   new URL('./workers/dxf-parser-worker.js', import.meta.url).href,
-      libredwgParserWorker: new URL('./workers/libredwg-parser-worker.js', import.meta.url).href,
-      mtextRendererWorker:  new URL('./workers/mtext-renderer-worker.js', import.meta.url).href,
-    })
-
-    cadManager = AcApDocManager
+    const mod = await import('@mlightcad/cad-simple-viewer')
+    AcApDocManagerClass = mod.AcApDocManager
   } catch (e) {
-    console.warn('CAD engine pre-load warning:', e)
+    console.warn('CAD engine load warning:', e)
   }
+})
+
+onBeforeUnmount(async () => {
+  try {
+    await AcApDocManagerClass?.instance?.destroy?.()
+  } catch {}
 })
 
 function onDrop(ev: DragEvent) {
@@ -94,41 +90,49 @@ async function loadFile(file: File) {
 
   try {
     const buffer = await file.arrayBuffer()
-    const data   = new Uint8Array(buffer)
 
-    const { AcApDocManager } = await import('@mlightcad/cad-simple-viewer')
-    const { registerWorkers } = await import('@mlightcad/data-model')
+    if (!AcApDocManagerClass) {
+      const mod = await import('@mlightcad/cad-simple-viewer')
+      AcApDocManagerClass = mod.AcApDocManager
+    }
 
-    // Register workers with absolute asset paths
-    registerWorkers({
-      dxfParserWorkerUrl:   '/assets/dxf-parser-worker.js',
-      libredwgParserWorker: '/assets/libredwg-parser-worker.js',
-      mtextRendererWorker:  '/assets/mtext-renderer-worker.js',
+    if (!containerRef.value) throw new Error('Container not ready')
+
+    // Destroy previous instance if any
+    try { await AcApDocManagerClass.instance?.destroy?.() } catch {}
+
+    // Create instance — pass worker URLs here (correct API)
+    AcApDocManagerClass.createInstance({
+      container: containerRef.value,
+      autoResize: true,
+      webworkerFileUrls: {
+        dxfParser:   '/assets/dxf-parser-worker.js',
+        dwgParser:   '/assets/libredwg-parser-worker.js',
+        mtextRender: '/assets/mtext-renderer-worker.js',
+      }
     })
 
-    if (!canvasRef.value) throw new Error('Canvas not ready')
-
-    // Create viewer instance on canvas
-    AcApDocManager.createInstance(canvasRef.value)
-
-    const ok = await AcApDocManager.instance.openDocument(
+    const ok = await AcApDocManagerClass.instance.openDocument(
       file.name,
-      data,
+      buffer,
+      {} // empty options — fontLoader added internally
     )
 
     if (!ok) throw new Error('Failed to open file. It may be corrupted or unsupported.')
 
     fileName.value = file.name
-    isLoaded.value  = true
+    isLoaded.value = true
 
   } catch (err: any) {
     errorMsg.value = err?.message ?? String(err)
+    console.error('CAD load error:', err)
   } finally {
     isLoading.value = false
   }
 }
 
 function resetFile() {
+  try { AcApDocManagerClass?.instance?.destroy?.() } catch {}
   isLoaded.value = false
   fileName.value = ''
   errorMsg.value = ''
@@ -153,7 +157,6 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
   padding: 52px 44px; background: white; border-radius: 20px;
   box-shadow: 0 4px 32px rgba(0,0,0,0.08); text-align: center; max-width: 440px;
 }
-.drop-inner svg { color: #1B4F8A; }
 .drop-inner h1 { font-size: 22px; font-weight: 700; color: #111; }
 .drop-inner p  { font-size: 14px; color: #666; }
 .drop-inner button {
@@ -204,8 +207,8 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
 }
 .open-btn:hover { background: #f0f4f8; }
 
-.cad-canvas {
+.cad-container {
   flex: 1; min-height: 0; width: 100%;
-  display: block;
+  display: block; position: relative;
 }
 </style>
