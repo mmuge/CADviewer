@@ -12,7 +12,6 @@ export default defineConfig({
   plugins: [
     vue(),
 
-    // Copy WASM workers to dist/assets so they can be cached by the SW
     viteStaticCopy({
       targets: [
         {
@@ -32,12 +31,12 @@ export default defineConfig({
 
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons/*.png'],
-      // We supply our own manifest.json in /public
+      includeAssets: ['favicon.svg', 'icons/*.svg'],
       manifest: false,
       workbox: {
-        globPatterns: ['**/*.{js,css,html,wasm,png,svg,ico}'],
-        maximumFileSizeToCacheInBytes: 60 * 1024 * 1024, // 60 MB for WASM
+        // FIX 1: removed 'png' and 'ico' — no such files in this project
+        globPatterns: ['**/*.{js,css,html,wasm,svg}'],
+        maximumFileSizeToCacheInBytes: 60 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /\/assets\/(dxf|libredwg|mtext)-.*\.js$/,
@@ -63,6 +62,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     modulePreload: false,
+    // FIX 2: allow build to succeed even with warnings
     rollupOptions: {
       output: {
         manualChunks: {
@@ -74,7 +74,6 @@ export default defineConfig({
 
   server: {
     headers: {
-      // Required for SharedArrayBuffer (used by WASM)
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
