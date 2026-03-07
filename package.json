@@ -12,6 +12,7 @@
     "@mlightcad/cad-viewer": "latest",
     "@mlightcad/cad-simple-viewer": "latest",
     "@mlightcad/data-model": "latest",
+    "element-plus": "latest",
     "vue": "^3.4.0",
     "vue-i18n": "^9.12.0"
   },
