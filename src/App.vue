@@ -1,289 +1,191 @@
 <template>
-  <div class="app-root" :data-theme="isDark ? 'dark' : 'light'" :dir="dir">
+  <div class="app-root" :dir="dir">
 
-    <FileDropZone v-if="!hasFile" @file="onFile" />
+    <!-- Show file picker if no file loaded -->
+    <div v-if="!selectedFile" class="drop-zone" @dragover.prevent @drop.prevent="onDrop">
+      <div class="drop-inner">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
+          <polyline points="13 2 13 9 20 9"/>
+        </svg>
+        <h1>{{ dir === 'rtl' ? 'افتح ملف DWG أو DXF' : 'Open a DWG or DXF File' }}</h1>
+        <p>{{ dir === 'rtl' ? 'اسحب الملف هنا، أو' : 'Drag & drop your file here, or' }}</p>
+        <input ref="fileInput" type="file" accept=".dwg,.dxf" style="display:none" @change="onInputChange" />
+        <button @click="fileInput?.click()">
+          {{ dir === 'rtl' ? 'استعراض الملفات' : 'Browse Files' }}
+        </button>
+        <div class="badges">
+          <span>DWG R14–2018</span>
+          <span>DXF ASCII</span>
+          <span>🔒 {{ dir === 'rtl' ? 'خصوصية تامة' : '100% Private' }}</span>
+        </div>
+      </div>
+    </div>
 
-    <canvas ref="canvasRef" class="cad-canvas" />
-
-    <header class="top-bar">
-      <div class="top-bar-left">
+    <!-- CAD Viewer Component (official @mlightcad/cad-viewer) -->
+    <div v-if="selectedFile" class="viewer-wrap">
+      <!-- Top bar -->
+      <header class="top-bar">
         <span class="app-title">📐 CAD Viewer</span>
-        <span v-if="fileName" class="file-name">{{ fileName }}</span>
-      </div>
-      <div class="top-bar-right">
-        <button class="icon-btn" :title="t('ui.toggleLang')" @click="toggleLang">
-          {{ locale === 'ar' ? 'EN' : 'ع' }}
-        </button>
-        <button class="icon-btn" :title="t('ui.toggleTheme')" @click="toggleTheme">
-          {{ isDark ? '☀️' : '🌙' }}
-        </button>
-        <button class="icon-btn" :title="t('ui.openFile')" @click="showFilePicker = true">
-          📂
-        </button>
-      </div>
-    </header>
+        <span class="file-name">{{ selectedFile.name }}</span>
+        <div class="bar-actions">
+          <button @click="toggleLang">{{ isAr ? 'EN' : 'ع' }}</button>
+          <button @click="selectedFile = null">📂 {{ isAr ? 'فتح ملف آخر' : 'Open File' }}</button>
+        </div>
+      </header>
 
-    <input
-      ref="hiddenInput"
-      type="file"
-      accept=".dwg,.dxf"
-      style="display:none"
-      @change="onHiddenInput"
-    />
-
-    <MeasureToolbar v-if="hasFile" />
-    <MeasureResults v-if="hasFile" :file-name="fileName" />
-    <CursorCoord :canvas="canvasRef" />
-
-    <transition name="fade">
-      <div v-if="isLoading" class="loading-overlay">
-        <div class="spinner" />
-        <span>{{ t('ui.loading') }}</span>
-      </div>
-    </transition>
-
-    <transition name="slide-up">
-      <div v-if="errorMsg" class="error-toast" @click="errorMsg = ''">
-        ⚠️ {{ errorMsg }}
-      </div>
-    </transition>
+      <!-- The official viewer component -->
+      <MlCadViewer
+        class="cad-viewer"
+        :local-file="selectedFile"
+        :locale="isAr ? 'zh' : 'en'"
+      />
+    </div>
 
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, provide, watch, onMounted } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { ref, computed, onMounted } from 'vue'
+import { MlCadViewer } from '@mlightcad/cad-viewer'
 
-import FileDropZone   from '@/components/FileDropZone.vue'
-import MeasureToolbar from '@/components/MeasureToolbar.vue'
-import MeasureResults from '@/components/MeasureResults.vue'
-import CursorCoord    from '@/components/CursorCoord.vue'
-import { useTheme }   from '@/composables/useTheme'
-import { handleCanvasClick, handleEntityClick } from '@/composables/useMeasure'
+const selectedFile = ref<File | null>(null)
+const fileInput    = ref<HTMLInputElement | null>(null)
+const isAr         = ref(false)
+const dir          = computed(() => isAr.value ? 'rtl' : 'ltr')
 
-const { t, locale } = useI18n()
-const dir = computed(() => locale.value === 'ar' ? 'rtl' : 'ltr')
+onMounted(() => {
+  isAr.value = navigator.language.startsWith('ar')
+})
 
 function toggleLang() {
-  locale.value = locale.value === 'ar' ? 'en' : 'ar'
-  localStorage.setItem('lang', locale.value)
+  isAr.value = !isAr.value
 }
 
-const { isDark, toggle: toggleTheme } = useTheme()
-
-const canvasRef      = ref<HTMLCanvasElement | null>(null)
-const hasFile        = ref(false)
-const fileName       = ref('')
-const isLoading      = ref(false)
-const errorMsg       = ref('')
-const showFilePicker = ref(false)
-const hiddenInput    = ref<HTMLInputElement | null>(null)
-
-// Lazy-loaded CAD manager (set after mount)
-let cadManager: any = null
-
-provide('canvas', canvasRef)
-
-onMounted(async () => {
-  const savedLang = localStorage.getItem('lang')
-  if (savedLang) locale.value = savedLang as 'en' | 'ar'
-
-  try {
-    // Load data-model first for worker registration
-    const dataModel = await import('@mlightcad/data-model')
-
-    if (typeof dataModel.registerWorkers === 'function') {
-      dataModel.registerWorkers({
-        dxfParserWorkerUrl:   './assets/dxf-parser-worker.js',
-        libredwgParserWorker: './assets/libredwg-parser-worker.js',
-        mtextRendererWorker:  './assets/mtext-renderer-worker.js',
-      })
-    }
-
-    // Init the viewer canvas
-    const cadSimple = await import('@mlightcad/cad-simple-viewer')
-    if (!canvasRef.value) return
-
-    cadManager = cadSimple.AcApDocManager.createInstance(canvasRef.value)
-
-    canvasRef.value.addEventListener('cad:entitySelected', (ev: any) => {
-      handleEntityClick(ev.detail?.entity)
-    })
-
-    canvasRef.value.addEventListener('click', (ev: MouseEvent) => {
-      if (canvasRef.value) handleCanvasClick(ev, canvasRef.value)
-    })
-  } catch (err) {
-    console.warn('[CADViewer] Init warning:', err)
-  }
-})
-
-watch(showFilePicker, (v) => {
-  if (v) {
-    hiddenInput.value?.click()
-    showFilePicker.value = false
-  }
-})
-
-async function onFile(file: File) {
-  await loadFile(file)
+function onDrop(ev: DragEvent) {
+  const file = ev.dataTransfer?.files[0]
+  if (file) loadFile(file)
 }
 
-function onHiddenInput(ev: Event) {
+function onInputChange(ev: Event) {
   const file = (ev.target as HTMLInputElement).files?.[0]
   if (file) loadFile(file)
-  ;(ev.target as HTMLInputElement).value = ''
 }
 
-async function loadFile(file: File) {
-  isLoading.value = true
-  errorMsg.value  = ''
-  try {
-    const buffer = await file.arrayBuffer()
-    const data   = new Uint8Array(buffer)
-    const ext    = file.name.split('.').pop()?.toLowerCase()
-
-    if (ext !== 'dwg' && ext !== 'dxf') {
-      throw new Error(t('error.unsupported'))
-    }
-
-    const cadSimple = await import('@mlightcad/cad-simple-viewer')
-    const manager   = cadSimple.AcApDocManager.instance
-
-    // Register DWG converter only if API exists
-    if (ext === 'dwg') {
-      try {
-        const dataModel = await import('@mlightcad/data-model')
-        const converterMgr = (dataModel as any).AcDbDatabaseConverterManager?.instance
-          ?? (cadSimple as any).AcDbDatabaseConverterManager?.instance
-
-        if (converterMgr && typeof converterMgr.registerConverter === 'function') {
-          const fileType = (dataModel as any).AcDbFileType?.Dwg
-            ?? (cadSimple as any).AcDbFileType?.Dwg
-            ?? 1 // fallback numeric
-
-          // Try to get LibreDWGConverter from either package
-          const ConverterClass = (cadSimple as any).LibreDWGConverter
-            ?? (dataModel as any).LibreDWGConverter
-
-          if (ConverterClass) {
-            converterMgr.registerConverter(
-              fileType,
-              () => Promise.resolve(new ConverterClass())
-            )
-          }
-        }
-      } catch (convErr) {
-        console.warn('[CADViewer] DWG converter registration skipped:', convErr)
-        // Continue — some versions auto-register or include it internally
-      }
-    }
-
-    const ok = await manager.openDocument(
-      file.name,
-      data,
-      { minimumChunkSize: 1000, readOnly: true }
-    )
-    if (!ok) throw new Error(t('error.parseFailed'))
-
-    fileName.value = file.name
-    hasFile.value  = true
-
-  } catch (err: any) {
-    errorMsg.value = err?.message ?? String(err)
-    setTimeout(() => { errorMsg.value = '' }, 6000)
-  } finally {
-    isLoading.value = false
+function loadFile(file: File) {
+  const ext = file.name.split('.').pop()?.toLowerCase()
+  if (ext !== 'dwg' && ext !== 'dxf') {
+    alert('Please use .dwg or .dxf files only.')
+    return
   }
+  selectedFile.value = file
 }
 </script>
 
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body, #app { width: 100%; height: 100%; overflow: hidden; }
+html, body, #app { width: 100%; height: 100%; overflow: hidden; background: #f0f2f5; }
 </style>
 
 <style scoped>
 .app-root {
-  position: relative;
   width: 100%;
   height: 100%;
-  background: var(--bg-primary);
-  color: var(--text-primary);
   font-family: system-ui, -apple-system, sans-serif;
-  overflow: hidden;
 }
-.cad-canvas {
-  position: absolute;
-  inset: 0;
+
+/* ── Drop zone ── */
+.drop-zone {
   width: 100%;
   height: 100%;
-  display: block;
-}
-.top-bar {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 48px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  z-index: 40;
-  backdrop-filter: blur(8px);
+  justify-content: center;
+  background: #f0f2f5;
 }
-.top-bar-left  { display: flex; align-items: center; gap: 12px; }
-.top-bar-right { display: flex; align-items: center; gap: 8px; }
-.app-title { font-size: 15px; font-weight: 700; color: var(--accent); }
-.file-name {
-  font-size: 13px; color: var(--text-secondary);
-  max-width: 200px; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap;
+.drop-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 48px 40px;
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  text-align: center;
+  max-width: 420px;
+  color: #555;
 }
-.icon-btn {
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
+.drop-inner svg { color: #1B4F8A; }
+.drop-inner h1 { font-size: 22px; font-weight: 700; color: #1a1a1a; }
+.drop-inner p  { font-size: 14px; color: #666; }
+.drop-inner button {
+  padding: 13px 36px;
+  background: #1B4F8A;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
-  font-size: 13px;
-  color: var(--text-primary);
   transition: background 0.15s;
 }
-.icon-btn:hover { background: var(--accent-pale); }
-.loading-overlay {
-  position: absolute; inset: 0;
-  background: rgba(0,0,0,0.55);
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  gap: 16px; z-index: 200;
-  color: #fff; font-size: 15px;
+.drop-inner button:hover { background: #1a3f70; }
+.badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
-.spinner {
-  width: 40px; height: 40px;
-  border: 3px solid rgba(255,255,255,0.3);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+.badges span {
+  padding: 4px 12px;
+  background: #f0f4f8;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
-.error-toast {
-  position: absolute;
-  bottom: 80px; left: 50%;
-  transform: translateX(-50%);
-  background: #dc2626; color: #fff;
-  padding: 10px 20px; border-radius: 8px;
-  font-size: 14px; cursor: pointer;
-  z-index: 300; max-width: 90vw;
-  text-align: center;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+
+/* ── Viewer wrap ── */
+.viewer-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
-.fade-enter-active, .fade-leave-active { transition: opacity 0.25s; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
-.slide-up-enter-active, .slide-up-leave-active { transition: all 0.3s; }
-.slide-up-enter-from, .slide-up-leave-to {
-  transform: translateX(-50%) translateY(20px); opacity: 0;
+
+.top-bar {
+  height: 48px;
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.app-title { font-weight: 700; color: #1B4F8A; font-size: 15px; }
+.file-name  { font-size: 13px; color: #666; flex: 1;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-actions { display: flex; gap: 8px; }
+.bar-actions button {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.bar-actions button:hover { background: #f0f4f8; }
+
+/* CAD viewer takes all remaining height */
+.cad-viewer {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
 }
 </style>
