@@ -4,7 +4,7 @@ import { viteStaticCopy } from 'vite-plugin-static-copy'
 import { resolve } from 'path'
 
 export default defineConfig({
-  base: './',
+  base: '/',
   resolve: {
     alias: { '@': resolve(__dirname, 'src') },
   },
@@ -17,7 +17,11 @@ export default defineConfig({
           dest: 'assets',
         },
         {
-          src: './node_modules/@mlightcad/cad-simple-viewer/dist/*-worker.js',
+          src: './node_modules/@mlightcad/cad-simple-viewer/dist/libredwg-parser-worker.js',
+          dest: 'assets',
+        },
+        {
+          src: './node_modules/@mlightcad/cad-simple-viewer/dist/mtext-renderer-worker.js',
           dest: 'assets',
         },
       ],
@@ -26,9 +30,6 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     modulePreload: false,
-    rollupOptions: {
-      input: { main: 'index.html' },
-    },
   },
   server: {
     headers: {
