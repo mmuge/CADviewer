@@ -27,11 +27,7 @@ export default defineConfig({
     outDir: 'dist',
     modulePreload: false,
     rollupOptions: {
-      output: {
-        manualChunks: {
-          vue: ['vue'],
-        },
-      },
+      input: { main: 'index.html' },
     },
   },
   server: {
