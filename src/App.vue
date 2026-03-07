@@ -120,6 +120,11 @@ async function loadFile(file: File) {
 
     if (!ok) throw new Error('Failed to open file. It may be corrupted or unsupported.')
 
+    // Wait for rendering then zoom to fit
+    setTimeout(() => {
+      AcApDocManagerClass.instance.curView?.zoomToFitDrawing()
+    }, 500)
+
     fileName.value = file.name
     isLoaded.value = true
 
