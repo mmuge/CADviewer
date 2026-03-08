@@ -38,7 +38,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { MlCadViewer } from '@mlightcad/cad-viewer'
-import '@mlightcad/cad-viewer/dist/index.css'
+// CSS imported via vite config instead
 
 const fileInput    = ref<HTMLInputElement | null>(null)
 const selectedFile = ref<File | undefined>(undefined)
