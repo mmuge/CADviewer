@@ -13,11 +13,11 @@ export default defineConfig({
           dest: 'assets'
         },
         {
-          src: 'node_modules/@mlightcad/data-model/dist/libredwg-parser-worker.js',
+          src: 'node_modules/@mlightcad/cad-simple-viewer/dist/libredwg-parser-worker.js',
           dest: 'assets'
         },
         {
-          src: 'node_modules/@mlightcad/data-model/dist/mtext-renderer-worker.js',
+          src: 'node_modules/@mlightcad/cad-simple-viewer/dist/mtext-renderer-worker.js',
           dest: 'assets'
         }
       ]
@@ -28,6 +28,9 @@ export default defineConfig({
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp'
     }
+  },
+  css: {
+    preprocessorOptions: {}
   },
   optimizeDeps: {
     exclude: ['@mlightcad/cad-viewer', '@mlightcad/cad-simple-viewer', '@mlightcad/data-model']
