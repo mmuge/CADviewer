@@ -1,40 +1,35 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
-import { resolve } from 'path'
 
 export default defineConfig({
   base: '/',
-  resolve: {
-    alias: { '@': resolve(__dirname, 'src') },
-  },
   plugins: [
     vue(),
     viteStaticCopy({
       targets: [
         {
-          src: './node_modules/@mlightcad/data-model/dist/dxf-parser-worker.js',
-          dest: 'assets',
+          src: 'node_modules/@mlightcad/data-model/dist/dxf-parser-worker.js',
+          dest: 'assets'
         },
         {
-          src: './node_modules/@mlightcad/cad-simple-viewer/dist/libredwg-parser-worker.js',
-          dest: 'assets',
+          src: 'node_modules/@mlightcad/data-model/dist/libredwg-parser-worker.js',
+          dest: 'assets'
         },
         {
-          src: './node_modules/@mlightcad/cad-simple-viewer/dist/mtext-renderer-worker.js',
-          dest: 'assets',
-        },
-      ],
-    }),
+          src: 'node_modules/@mlightcad/data-model/dist/mtext-renderer-worker.js',
+          dest: 'assets'
+        }
+      ]
+    })
   ],
-  build: {
-    outDir: 'dist',
-    modulePreload: false,
-  },
   server: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-    },
+      'Cross-Origin-Embedder-Policy': 'require-corp'
+    }
   },
+  optimizeDeps: {
+    exclude: ['@mlightcad/cad-viewer', '@mlightcad/cad-simple-viewer', '@mlightcad/data-model']
+  }
 })
