@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <!-- Drop zone -->
   <div v-if="!selectedFile" class="drop-zone" @dragover.prevent @drop.prevent="onDrop">
     <div class="drop-inner">
@@ -11,11 +11,11 @@
       <p>Drag &amp; drop your file here, or click below</p>
       <input ref="fileInput" type="file" accept=".dwg,.dxf" style="display:none" @change="onInputChange" />
       <button @click="fileInput?.click()">Browse Files</button>
-      <p v-if="errorMsg" class="error">⚠️ {{ errorMsg }}</p>
+      <p v-if="errorMsg" class="error">âš ï¸ {{ errorMsg }}</p>
       <div class="badges">
-        <span>DWG R14–2018</span>
+        <span>DWG R14â€“2018</span>
         <span>DXF ASCII</span>
-        <span>🔒 100% Private</span>
+        <span>ðŸ”’ 100% Private</span>
       </div>
     </div>
   </div>
@@ -34,7 +34,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { MlCadViewer } from '@mlightcad/cad-viewer'
-import '@mlightcad/cad-viewer/dist/index.css'
 
 const fileInput    = ref<HTMLInputElement | null>(null)
 const selectedFile = ref<File | undefined>(undefined)
@@ -89,3 +88,4 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
   font-family: system-ui, sans-serif;
 }
 </style>
+
