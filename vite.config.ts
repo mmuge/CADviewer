@@ -6,6 +6,7 @@ export default defineConfig({
   base: '/',
   plugins: [
     vue(),
+    // Copy worker files to /assets/ — the library looks for them there by default
     viteStaticCopy({
       targets: [
         {
@@ -28,11 +29,5 @@ export default defineConfig({
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp'
     }
-  },
-  css: {
-    preprocessorOptions: {}
-  },
-  optimizeDeps: {
-    exclude: ['@mlightcad/cad-viewer', '@mlightcad/cad-simple-viewer', '@mlightcad/data-model']
   }
 })
