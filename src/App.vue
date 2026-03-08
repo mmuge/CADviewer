@@ -1,8 +1,8 @@
 <template>
   <div class="app-root">
 
-    <!-- Drop zone -->
-    <div v-if="!isLoaded" class="drop-zone" @dragover.prevent @drop.prevent="onDrop">
+    <!-- Drop zone — shown until first file is picked -->
+    <div v-if="!selectedFile" class="drop-zone" @dragover.prevent @drop.prevent="onDrop">
       <div class="drop-inner">
         <svg width="72" height="72" viewBox="0 0 24 24" fill="none"
              stroke="#1B4F8A" stroke-width="1.2" stroke-linecap="round">
@@ -10,7 +10,7 @@
           <polyline points="13 2 13 9 20 9"/>
         </svg>
         <h1>Open a DWG or DXF File</h1>
-        <p>Drag & drop your file here, or click below</p>
+        <p>Drag &amp; drop your file here, or click below</p>
         <input ref="fileInput" type="file" accept=".dwg,.dxf" style="display:none" @change="onInputChange" />
         <button @click="fileInput?.click()">Browse Files</button>
         <p v-if="errorMsg" class="error-msg">⚠️ {{ errorMsg }}</p>
@@ -22,51 +22,27 @@
       </div>
     </div>
 
-    <!-- Loading overlay -->
-    <div v-if="isLoading" class="loading-overlay">
-      <div class="spinner"></div>
-      <p>Opening file…</p>
-    </div>
-
-    <!-- Viewer -->
-    <div v-show="isLoaded" class="viewer-wrap">
-      <header class="top-bar">
-        <span class="app-title">📐 CAD Viewer</span>
-        <span class="file-name">{{ fileName }}</span>
-        <button class="open-btn" @click="resetFile">📂 Open Another File</button>
-      </header>
-      <div ref="containerRef" class="cad-container"></div>
-    </div>
+    <!-- Full-screen MlCadViewer — owns its own toolbar, menu, coords, measure -->
+    <MlCadViewer
+      v-else
+      :local-file="selectedFile"
+      theme="light"
+      :use-main-thread-draw="false"
+      locale="en"
+      class="cad-viewer-full"
+    />
 
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref } from 'vue'
+import { MlCadViewer } from '@mlightcad/cad-viewer'
+import '@mlightcad/cad-viewer/dist/index.css'
 
 const fileInput    = ref<HTMLInputElement | null>(null)
-const containerRef = ref<HTMLDivElement | null>(null)
-const isLoaded     = ref(false)
-const isLoading    = ref(false)
-const fileName     = ref('')
+const selectedFile = ref<File | undefined>(undefined)
 const errorMsg     = ref('')
-
-let AcApDocManagerClass: any = null
-
-onMounted(async () => {
-  try {
-    const mod = await import('@mlightcad/cad-simple-viewer')
-    AcApDocManagerClass = mod.AcApDocManager
-  } catch (e) {
-    console.warn('CAD engine load warning:', e)
-  }
-})
-
-onBeforeUnmount(async () => {
-  try {
-    await AcApDocManagerClass?.instance?.destroy?.()
-  } catch {}
-})
 
 function onDrop(ev: DragEvent) {
   const file = ev.dataTransfer?.files[0]
@@ -78,69 +54,14 @@ function onInputChange(ev: Event) {
   if (file) loadFile(file)
 }
 
-async function loadFile(file: File) {
+function loadFile(file: File) {
   const ext = file.name.split('.').pop()?.toLowerCase()
   if (ext !== 'dwg' && ext !== 'dxf') {
     errorMsg.value = 'Please use .dwg or .dxf files only.'
     return
   }
-
-  isLoading.value = true
-  errorMsg.value  = ''
-
-  try {
-    const buffer = await file.arrayBuffer()
-
-    if (!AcApDocManagerClass) {
-      const mod = await import('@mlightcad/cad-simple-viewer')
-      AcApDocManagerClass = mod.AcApDocManager
-    }
-
-    if (!containerRef.value) throw new Error('Container not ready')
-
-    // Destroy previous instance if any
-    try { await AcApDocManagerClass.instance?.destroy?.() } catch {}
-
-    // Create instance — pass worker URLs here (correct API)
-    AcApDocManagerClass.createInstance({
-      container: containerRef.value,
-      autoResize: true,
-      webworkerFileUrls: {
-        dxfParser:   '/assets/dxf-parser-worker.js',
-        dwgParser:   '/assets/libredwg-parser-worker.js',
-        mtextRender: '/assets/mtext-renderer-worker.js',
-      }
-    })
-
-    const ok = await AcApDocManagerClass.instance.openDocument(
-      file.name,
-      buffer,
-      {} // empty options — fontLoader added internally
-    )
-
-    if (!ok) throw new Error('Failed to open file. It may be corrupted or unsupported.')
-
-    // Wait for rendering then zoom to fit
-    setTimeout(() => {
-      AcApDocManagerClass.instance.curView?.zoomToFitDrawing()
-    }, 500)
-
-    fileName.value = file.name
-    isLoaded.value = true
-
-  } catch (err: any) {
-    errorMsg.value = err?.message ?? String(err)
-    console.error('CAD load error:', err)
-  } finally {
-    isLoading.value = false
-  }
-}
-
-function resetFile() {
-  try { AcApDocManagerClass?.instance?.destroy?.() } catch {}
-  isLoaded.value = false
-  fileName.value = ''
   errorMsg.value = ''
+  selectedFile.value = file
 }
 </script>
 
@@ -150,8 +71,9 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
 </style>
 
 <style scoped>
-.app-root { width: 100%; height: 100%; font-family: system-ui, sans-serif; position: relative; }
+.app-root { width: 100%; height: 100%; }
 
+/* Drop zone */
 .drop-zone {
   width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
@@ -177,43 +99,10 @@ html, body, #app { width: 100%; height: 100%; overflow: hidden; }
   border-radius: 20px; font-size: 12px; font-weight: 600; color: #555;
 }
 
-.loading-overlay {
-  position: absolute; inset: 0;
-  background: rgba(255,255,255,0.9);
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 16px; z-index: 100;
-}
-.spinner {
-  width: 44px; height: 44px;
-  border: 4px solid #e5e7eb;
-  border-top-color: #1B4F8A;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.viewer-wrap {
-  width: 100%; height: 100%;
-  display: flex; flex-direction: column;
-}
-.top-bar {
-  height: 48px; background: white; border-bottom: 1px solid #e5e7eb;
-  display: flex; align-items: center; gap: 12px; padding: 0 16px;
-  flex-shrink: 0; z-index: 10; box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-}
-.app-title { font-weight: 700; color: #1B4F8A; font-size: 15px; }
-.file-name  {
-  font-size: 13px; color: #555; flex: 1;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.open-btn {
-  padding: 6px 14px; border: 1px solid #ddd; border-radius: 7px;
-  background: white; cursor: pointer; font-size: 13px; white-space: nowrap;
-}
-.open-btn:hover { background: #f0f4f8; }
-
-.cad-container {
-  flex: 1; min-height: 0; width: 100%;
-  display: block; position: relative;
+/* Viewer takes full screen — MlCadViewer handles its own UI */
+.cad-viewer-full {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 </style>
